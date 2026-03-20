@@ -1,68 +1,62 @@
----
-name: eigenhelm
-description: Evaluate code quality using eigenhelm aesthetic scoring. Run after writing or modifying code files to get actionable improvement directives with automatic iteration limits.
----
+# eigenhelm — Agent Skill
 
-# Eigenhelm Code Quality Evaluation
+Evaluate code quality using eigenhelm aesthetic scoring. Run after writing or modifying code files to get actionable improvement directives.
 
-## Running Evaluation
+## When to use
 
-After writing or modifying a code file, evaluate it:
+- After writing or substantially modifying a source file
+- After all tests pass — eigenhelm is a post-test tool, not a substitute for tests
+- During code review to identify structural issues
+
+## When NOT to use
+
+- As a loop target — do NOT rewrite working code to chase a score
+- Before tests pass — fix correctness first, aesthetics second
+- On generated code, config files, or test fixtures
+
+## How to evaluate
 
 ```bash
-eh evaluate --classify --format human <file>
+eh evaluate <file-or-directory> --classify
 ```
 
-If `eh` is not on PATH, use `eigenhelm evaluate` or `uv run eh evaluate`.
+## How to interpret results
 
-## Interpreting Output
+- **accept** (score < 0.4): Code is structurally sound. Move on.
+- **marginal** (score 0.4-0.6): Code is fine. Read directives if curious, but do not iterate to improve the score. Marginal is an acceptable end state.
+- **reject** (score > 0.6): Worth reviewing. Read the directives — they identify specific structural issues. Apply fixes that make sense, skip ones that don't.
 
-**Score**: 0.0 (perfect) to 1.0 (worst). Lower is better.
+## Rules for agents
 
-**Decisions** (thresholds vary by config/model):
-- **accept** (score ≤ 0.4): Good. Move on.
-- **marginal** (0.4 < score < 0.6): Review high-severity directives.
-- **reject** (score ≥ 0.6): Must address high-severity directives.
+1. **One pass, not a loop.** Evaluate once after writing a file. If reject, read the directives, apply what's obviously correct, re-evaluate once. If still reject or marginal, stop. Two passes maximum.
 
-**Percentile**: "p50" = better than 50% of training corpus.
+2. **Never sacrifice correctness for score.** If a directive suggests refactoring that would change behavior, skip it. A working reject is better than a broken marginal.
 
-**Five scoring dimensions**:
-1. `manifold_drift` — distance from learned code manifold
-2. `manifold_alignment` — alignment with principal quality axes
-3. `token_entropy` — information density of token stream
-4. `compression_structure` — compressibility / structural regularity
-5. `ncd_exemplar_distance` — normalized compression distance to nearest exemplar
+3. **Directives are suggestions, not commands.** `extract_repeated_logic` means "this region has structural repetition" — it doesn't mean you must extract. Sometimes repetition is the right choice (data tables, exhaustive matching, protocol conformance).
 
-**Directives** have severity `[high]`, `[medium]`, or `[low]`. Only act on `[high]` items.
+4. **Tests gate, eigenhelm advises.** Run tests before and after any eigenhelm-motivated change. If a change breaks tests, revert it immediately regardless of what it does to the score.
 
-## Iteration Protocol
+5. **Skip barrel and type-definition files.** Files that are primarily imports/exports or type definitions (dataclasses, interfaces, structs) are automatically skipped by eigenhelm. Don't manually evaluate them.
 
-Follow this strictly to avoid infinite refinement loops.
+## Directive reference
 
-1. Write or modify a file, then run `eh evaluate --classify --format human <file>`.
-2. **reject**: Address `[high]` severity directives only. Re-evaluate. Max **3 attempts**.
-3. **marginal**: Address `[high]` directives if straightforward. Max **2 attempts**.
-4. **accept**: Done. Move on.
+| Category | Meaning | Action |
+|----------|---------|--------|
+| `extract_repeated_logic` | Structural repetition detected in AST | Look for shared abstractions, but only if the repetition is logic, not data |
+| `reduce_complexity` | High cyclomatic/Halstead metrics | Break up complex functions |
+| `review_structure` | Code structure diverges from corpus norms | Informational — review but don't necessarily change |
+| `review_token_distribution` | Unusual token entropy | Usually noise — ignore unless extreme |
+| `improve_compression` | Low information density | May indicate boilerplate — review for opportunities to simplify |
 
-**STOP RULE**: If the score does not improve by ≥ 0.03 between attempts, stop immediately. The remaining issues are structural and cannot be fixed by refactoring.
+## Example workflow
 
-**Small files** (< 80 lines): `improve_compression` and `review_structure` directives are expected and capped at `[medium]` severity. Focus only on PCA-derived directives (`reduce_complexity`, `extract_repeated_logic`).
-
-## Common Flags
-
-| Flag | Purpose |
-|---|---|
-| `--model <path>` | Specific trained model (.npz) |
-| `--format json` | Machine-readable JSON output |
-| `--format sarif` | SARIF 2.1.0 for CI integration |
-| `--diff <range>` | Only files changed in git revision range |
-| `--scorecard` | Per-repo scorecard (M1-M5, Q1-Q5) |
-| `--strict` | Treat marginal as reject |
-| `--lenient` | Treat marginal as accept |
-
-## Setup
-
-Project config lives in `.eigenhelm.toml`. Run `eh init` to generate defaults. Key settings:
-- `model`: path to trained .npz model
-- `thresholds.accept` / `thresholds.reject`: classification boundaries
-- Threshold hierarchy: CLI flags > config file > model calibration > hardcoded defaults
+```
+1. Write code
+2. Run tests → all pass
+3. Run: eh evaluate src/mymodule.py --classify
+4. Read output:
+   - accept/marginal → done, move on
+   - reject → read directives, apply obvious fixes
+5. If you changed anything: run tests again
+6. Done. Do not re-evaluate.
+```
