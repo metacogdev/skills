@@ -1,3 +1,8 @@
+---
+name: eigenhelm
+description: Evaluate code quality using eigenhelm aesthetic scoring. Run after writing or modifying code files to get actionable improvement directives with automatic iteration limits.
+---
+
 # eigenhelm — Agent Skill
 
 Evaluate code quality using eigenhelm aesthetic scoring. Run after writing or modifying code files to get actionable improvement directives.
